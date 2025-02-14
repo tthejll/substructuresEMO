@@ -1,0 +1,323 @@
+---
+title: "pleasantness"
+output: html_document
+author: tthejll
+---
+
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+
+```
+
+
+```{r feature importance from python Factors}
+
+f1 <- "f1: AU06, AU07,\nAU09, AU10"
+f2 <- "f2: AU01, AU02"
+f3 <- "f3: AU15, AU17"
+f4 <- "f4: AU12, AU14"
+f5 <- "f5: AU25, AU26"
+f6 <- "f6: AU23"
+f7 <- "f7: AU09, AU15"
+
+legend_labels <- c(f1 = f1, f2 = f2, f3 = f3, f4 = f4, f5 = f5, f6 = f6, f7 = f7)
+
+# factors
+# copied from python - pleasantness
+feature_name <- c('f7 sd', 'f2 sum', 'f2 sd', 'f7 max', 'f2 mean', 'f7 mean', 'f7 sum', 'f3 mean', 'f2 max', 'f3 sum', 'f3 max', 'f3 sd', 'f5 max', 'f1 sd', 'f5 sd', 'f1 max', 'f5 mean', 'f5 sum', 'f6 mean', 'f1 sum', 'f1 mean', 'f4 max', 'f4 sum', 'f4 sd', 'f4 mean')
+feature_importance_val <- c(0.020896945669192486, 0.024554450475514997, 0.026085528257839066, 0.02679397645840975, 0.0273516334904008, 0.02762591738147959, 0.027744826164751924, 0.029166535261813568, 0.031473471383077246, 0.03357442557910091, 0.035159988405725824, 0.036998364656617724, 0.03812004489690437, 0.03845493078821294, 0.038881113457360915, 0.039000651523619624, 0.03916884143960132, 0.041260932935696826, 0.047327637175760315, 0.05125553658516071, 0.05240303245527041, 0.05445929573778729, 0.06715681136004632, 0.0701574267224058, 0.07492768173824924) %>% round(digits = 4)
+feature_importance_pleasantness <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Pleasantness") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+
+# copied from python - goal relevance
+feature_name <- c('f7 max', 'f7 sd', 'f7 mean', 'f2 sum', 'f2 mean', 'f2 max', 'f7 sum', 'f2 sd', 'f3 sd', 'f3 mean', 'f3 sum', 'f5 sd', 'f3 max', 'f5 max', 'f5 sum', 'f5 mean', 'f1 max', 'f1 sd', 'f4 max', 'f6 mean', 'f1 sum', 'f1 mean', 'f4 mean', 'f4 sum', 'f4 sd')
+feature_importance_val <- c(0.023255009500808995, 0.025274930668686534, 0.02749152445300767, 0.02814931758180065, 0.028190360457677265, 0.02919111680051068, 0.02948369992618792, 0.030912832287168488, 0.03324433036603273, 0.03426830249097244, 0.03529597286159517, 0.03589575587842027, 0.035988612965217985, 0.036650719246442365, 0.0388595150679673, 0.04012851179641578, 0.044630743397731744, 0.04608831773427856, 0.04927713559564446, 0.050265594330909984, 0.05473195918602198, 0.05665260052312683, 0.05689401793824851, 0.05947179220721726, 0.06970732673790847) %>% round(digits = 4)
+feature_importance_relevance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal relevance") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+# copied from python - conduciveness
+feature_name <- c('f7 sd', 'f2 sum', 'f3 sum', 'f3 max', 'f2 mean', 'f2 sd', 'f7 max', 'f3 mean', 'f7 sum', 'f2 max', 'f7 mean', 'f3 sd', 'f5 sd', 'f5 sum', 'f5 mean', 'f1 sd', 'f5 max', 'f6 mean', 'f4 max', 'f1 max', 'f1 mean', 'f4 sd', 'f4 sum', 'f1 sum', 'f4 mean')
+feature_importance_val <- c(0.023973569443333086, 0.026162876719197557, 0.028575637186019825, 0.029970112050347258, 0.03173650303258909, 0.03214179236807127, 0.032288703643390315, 0.03234864538970563, 0.03262478197904113, 0.034991994186178405, 0.035091540253018576, 0.03597358581439728, 0.03730565323901283, 0.040361879140154044, 0.04112521161973445, 0.041330305008893446, 0.04360405988189784, 0.04403198856230675, 0.04868097804086871, 0.049011179091185283, 0.052422745986892096, 0.053079127160981114, 0.055501783551106215, 0.05584024082347466, 0.06182510582820327) %>% round(digits = 4)
+feature_importance_conducive <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal conduciveness") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+# copied from python - fairness
+feature_name <- c('f2 max', 'f7 sd', 'f2 sd', 'f7 max', 'f2 sum', 'f2 mean', 'f7 mean',
+       'f3 sum', 'f7 sum', 'f3 mean', 'f3 max', 'f5 sd', 'f3 sd', 'f5 sum',
+       'f6 mean', 'f5 max', 'f5 mean', 'f1 sd', 'f4 max', 'f1 max', 'f4 sd',
+       'f4 mean', 'f1 sum', 'f4 sum', 'f1 mean')
+feature_importance_val <- c(0.021937339857960186, 0.0239948067525617, 0.025571202922547595, 0.026958396082484928, 0.027364134035299803, 0.027789402016484433, 0.03068936907179084, 0.030744098916478006, 0.03147700998672497, 0.03177455597995573, 0.03240103018866564, 0.03547158441522689, 0.03561227669581699, 0.041817249659673816, 0.04243470135884102, 0.042875730133309344, 0.042997811818866485, 0.04707193596565423, 0.049140437612966055, 0.04930417730408556, 0.05592240050066004, 0.05904000790502354, 0.061368964150938045, 0.06275396492504949, 0.06348741174293462) %>% round(digits = 4)
+feature_importance_fairness <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+# copied from python - control-self
+feature_name <- c('f7 sd', 'f2 sum', 'f2 max', 'f7 max', 'f2 sd', 'f2 mean', 'f7 mean', 'f7 sum', 'f3 max', 'f3 mean', 'f3 sd', 'f3 sum', 'f6 mean', 'f5 sd', 'f1 max', 'f4 sd', 'f1 sd', 'f4 max', 'f1 sum', 'f1 mean', 'f4 mean', 'f4 sum', 'f5 mean', 'f5 sum', 'f5 max')
+feature_importance_val <- c(0.020280697504879514, 0.025190966461652496, 0.025697583687637936, 0.02570409569845856, 0.025836824501957522, 0.02824834586818671, 0.02834762331992622, 0.028398165444305228, 0.028420530859477613, 0.029601804948587728, 0.03042343448074982, 0.0319342782317302, 0.037426871809268576, 0.03979312629485129, 0.04092628791365906, 0.041970709471457444, 0.043525095263642684, 0.0471470734235623, 0.05030419379230158, 0.053179616786487235, 0.05558970331981823, 0.05725266959537617, 0.059872811469457485, 0.06982477232229535, 0.07510271753027309) %>% round(digits = 4)
+feature_importance_self <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Control-self") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+# copied from python - control-other
+feature_name <- c('f7 sd', 'f7 max', 'f2 sd', 'f2 mean', 'f7 mean', 'f7 sum', 'f3 sd', 'f2 sum', 'f2 max', 'f5 sd', 'f3 sum', 'f3 max', 'f3 mean', 'f5 mean', 'f5 max', 'f5 sum', 'f1 max', 'f1 sd', 'f1 mean', 'f4 max', 'f1 sum', 'f4 sum', 'f6 mean', 'f4 sd', 'f4 mean')
+feature_importance_val <- c(0.024206629026844288, 0.025771071166516415, 0.025976912695421385, 0.026257023471132127, 0.026469886865856006, 0.02719266984359433, 0.027647128483871842, 0.027878597914083834, 0.02825899767748343, 0.029020547969639487, 0.03222997450791472, 0.03310830596033558, 0.033810934776744773, 0.043795675932854945, 0.04729156786738517, 0.04788077862745833, 0.04805280511200789, 0.04999706028104062, 0.050899549949953965, 0.053483382402504595, 0.05389961426500231, 0.056923432129205365, 0.05822781691807994, 0.0608570083915616, 0.06086262776350701) %>% round(digits = 4)
+feature_importance_other <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Control-other") %>%
+  separate(feature_name, c("Factor", "val"), sep = " ", remove = FALSE)
+
+
+feature_importance <- rbind(feature_importance_other, feature_importance_self, feature_importance_fairness, feature_importance_conducive, feature_importance_relevance, feature_importance_pleasantness) %>% 
+  mutate_if(is.character, as.factor)
+
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_rev(feature_name), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  facet_wrap(~appraisal) +
+  scale_fill_viridis_d(labels = legend_labels) +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 13), title = element_text(size = 14)) + 
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r mean contribution of factor}
+
+importance_avg <- feature_importance %>%
+  group_by(appraisal ,Factor) %>%
+  summarise("Mean contribution" = mean(feature_importance_val), .groups = "drop")
+
+
+importance_avg %>%
+  ggplot(data = .,
+         aes(x = Factor,
+             y = `Mean contribution`,
+             fill = Factor)) + 
+  coord_flip() + 
+  geom_col(aes(fill = Factor)) + 
+  facet_wrap(~appraisal) +
+  scale_fill_viridis_d() + 
+  theme_minimal() + 
+  ggtitle("Feature importance in RandomForest Classifier (avg per factor)") +
+  ylab("Decrease in impurity") +
+  xlab("")
+  
+```
+
+``` {r feature imporatance AUs}
+# copied from python - goal conducive
+feature_name <- c('AU05', 'AU45', 'AU02', 'AU15', 'AU09', 'AU20', 'AU23', 'AU01', 'AU17', 'AU26', 'AU07', 'AU25', 'AU10', 'AU12', 'AU14', 'AU04', 'AU06')
+feature_importance_val <- c(0.017989882359866913, 0.026813281165243487, 0.03557395027492017, 0.04154224193911518, 0.04355910391186195, 0.0464793600984712, 0.05305194702367813, 0.05708974118093883, 0.05861081933698439, 0.0658191270204575, 0.06646349414578859, 0.07483977805545308, 0.07491317197464925, 0.07907208103201702, 0.08260241494993865, 0.08538186256976785, 0.09019774296084776) %>% round(digits = 4)
+feature_importance_GC_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal Conduciveness")
+
+# copied from python - fairness
+feature_name <- c('AU05', 'AU45', 'AU02', 'AU20', 'AU09', 'AU23', 'AU15', 'AU01', 'AU07', 'AU25', 'AU26', 'AU17', 'AU10', 'AU12', 'AU04', 'AU06', 'AU14')
+feature_importance_val <- c(0.015260091859424969, 0.02616528173268875, 0.028618235263777173, 0.04192296914601296, 0.04527068001075091, 0.0486390294983702, 0.04924646999909466, 0.05914607279462058, 0.06546508531213217, 0.06564984791431575, 0.06623416258272997, 0.06824040883722583, 0.07786289884534332, 0.07825377841253998, 0.08587602185319379, 0.08724711433883081, 0.09090185159894827) %>% round(digits = 4)
+feature_importance_F_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness")
+
+# copied from python - control-self
+feature_name <- c('AU05', 'AU02', 'AU20', 'AU23', 'AU09', 'AU45', 'AU01', 'AU15', 'AU07', 'AU17', 'AU14', 'AU10', 'AU04', 'AU06', 'AU12', 'AU26', 'AU25')
+feature_importance_val <- c(0.016490137145388488, 0.02805084570725775, 0.03907909202320244, 0.040411701145889115, 0.04203659350461894, 0.04250977647921853, 0.04337311211802373, 0.044447042305981094, 0.0551990295433165, 0.066089173307346, 0.07114878246848244, 0.07190293959149537, 0.07420195577790754, 0.0751708215271029, 0.0822206940854503, 0.09043568069716515, 0.11723262257215376) %>% round(digits = 4)
+feature_importance_CS_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Control-self")
+
+# copied from python - control other
+feature_name <- c('AU05', 'AU02', 'AU45', 'AU15', 'AU01', 'AU09', 'AU20', 'AU23', 'AU17', 'AU07', 'AU26', 'AU10', 'AU12', 'AU04', 'AU14', 'AU25', 'AU06')
+feature_importance_val <- c(0.016092657988614572, 0.023762947128170456, 0.03797156354276469, 0.04024989394028954, 0.046632883652448956, 0.0471553228995452, 0.04900852985746502, 0.05517335922386417, 0.06060108065521251, 0.06524099054915107, 0.06671995989137759, 0.07014668923834316, 0.08046304555514991, 0.08138387996544708, 0.08401533137978674, 0.08528568542776299, 0.09009617910460639) %>% round(digits = 4)
+feature_importance_CO_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Control-other")
+
+
+# copied from python - goal relevance
+feature_name <- c('AU05', 'AU45', 'AU02', 'AU09', 'AU15', 'AU25', 'AU23', 'AU17', 'AU26', 'AU01', 'AU07', 'AU10', 'AU20', 'AU04', 'AU06', 'AU12', 'AU14')
+feature_importance_val <- c(0.017963011717591595, 0.022671865079814873, 0.034323693375924245, 0.045155631412774414, 0.04673095696511145, 0.05420529042590098, 0.0543586615583751, 0.056197584251058065, 0.057548652916409225, 0.05874304496958367, 0.06372815089755689, 0.06671243436329592, 0.07226828965162965, 0.07378853391139752, 0.08454322578644531, 0.0946527892841696, 0.09640818343296148) %>% round(digits = 4)
+feature_importance_GR_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Goal Relevance")
+
+
+# copied from python - pleasantness
+feature_name <- c('AU05', 'AU02', 'AU09', 'AU45', 'AU15', 'AU23', 'AU01', 'AU26', 'AU17', 'AU25', 'AU07', 'AU10', 'AU20', 'AU06', 'AU14', 'AU12', 'AU04')
+feature_importance_val <- c(0.023764321238205478, 0.028979341062335864, 0.035123915524427604, 0.03603570075174638, 0.03883804507174257, 0.0469671362477058, 0.05120984681145141, 0.05143559298014584, 0.05232393770415035, 0.05576499822896115, 0.0633239947732716, 0.06954593718887278, 0.07178732175280991, 0.08410985927567455, 0.08804458616854954, 0.09493218354525473, 0.10781328167469446) %>% round(digits = 4)
+feature_importance_P_au <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Pleasantness")
+
+# bind au importance
+feature_importance_au <- rbind(feature_importance_CO_au, feature_importance_CS_au, feature_importance_F_au, feature_importance_GC_au, feature_importance_GR_au, feature_importance_P_au) %>% 
+  mutate_if(is.character, as.factor)
+
+# create factors
+f1 <- c("AU06", "AU07", "AU09", "AU10")
+f2 <- c("AU01", "AU02")
+f3 <- c("AU15", "AU17")
+f4 <- c("AU12", "AU14")
+f5 <- c("AU25", "AU26")
+f6 <- c("AU23")
+f7 <- c("AU09", "AU15")
+
+# Create a lookup list
+lookup <- list(f1 = f1, f2 = f2, f3 = f3, f4 = f4, f5 = f5, f6 = f6, f7 = f7)
+
+# Convert lookup into a named vector
+lookup_df <- stack(lookup) %>% rename(feature_name = values, Factor = ind)
+
+# bind to feature importance
+feature_importance_au <- feature_importance_au %>%
+  left_join(lookup_df, by = "feature_name") %>%
+  mutate(Factor = if_else(is.na(Factor), "No factor", Factor),
+         Factor = as.factor(Factor))
+
+# get manual colour scheme
+custom_colours <- c("f1" = "#440154", 
+                    "f2" = "#443983", 
+                    "f3" = "#31688e", 
+                    "f4" = "#21918c", 
+                    "f5" = "#35b779", 
+                    "f6" = "#90d743", 
+                    "f7" = "#fde725", 
+                    "No factor" = "gray")
+
+feature_importance_au %>%
+ggplot(data = .,
+       aes(
+         x = fct_rev(feature_name), 
+         y = feature_importance_val,
+         fill = Factor)) +
+  coord_flip() +
+  geom_col() + 
+  facet_wrap(~appraisal) +
+  scale_fill_manual(values = custom_colours) +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 13), title = element_text(size = 14)) + 
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+```
+
+```{r feature importance Stratou from python}
+
+f1_strat <- "f1: AU06, AU07, AU12"
+f2_strat <- "f2: AU01, AU02"
+f3_strat <- "f3: AU20, AU25, AU26"
+f4_strat <- "f4: AU14, AU17, AU23"
+f5_strat <- "f5: AU04, AU07, AU09"
+f6_strat <- "f6: AU10, AU15, AU17"
+
+legend_labels <- c(f1 = f1_strat, f2 = f2_strat, f3 = f3_strat, f4 = f4_strat, f5 = f5_strat, f6 = f6_strat)
+
+# copied from python - self
+feature_name <- c('f2_sd', 'f2_max', 'f2_mean', 'f2_sum', 'f6_sd', 'f5_sd', 'f5_max', 'f4_max', 'f6_max', 'f5_sum', 'f6_mean', 'f5_mean', 'f6_sum', 'f4_sum', 'f4_mean', 'f1_sd', 'f1_max', 'f4_sd', 'f1_sum', 'f1_mean', 'f3_sum', 'f3_mean', 'f3_sd', 'f3_max')
+feature_importance_val <- c(0.019021744610932367, 0.01979708956863626, 0.021775914432399436, 0.023701209590687475, 0.03603393284995201, 0.03863699089568017, 0.03865013423935222, 0.038997661088222675, 0.03978659985868629, 0.03984979127131145, 0.03997715719508615, 0.04013369094334502, 0.04085106547641898, 0.04188244736687314, 0.04349990909106514, 0.043721304146244595, 0.045335932563415116, 0.04645294512142578, 0.05088416116824198, 0.05287992324706663, 0.05490599913653369, 0.05765263364933102, 0.061258446420389356, 0.06431331606870302) %>% round(digits = 4)
+feature_importance_self_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Control-self") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+# copied from python - control-other
+feature_name <- c('f2_sd', 'f2_sum', 'f2_mean', 'f2_max', 'f6_sd', 'f3_max', 'f4_max', 'f5_max', 'f6_mean', 'f6_max', 'f6_sum', 'f3_sd', 'f1_sd', 'f4_sd', 'f3_sum', 'f5_sd', 'f5_sum', 'f3_mean', 'f5_mean', 'f4_sum', 'f1_sum', 'f1_max', 'f4_mean', 'f1_mean')
+feature_importance_val <- c(0.022285272766647376, 0.02678759892492671, 0.027111943161267745, 0.02831648407627444, 0.03599242101192905, 0.03709760937527504, 0.0390046746375293, 0.03915480764568704, 0.040817172145355955, 0.041002566925606464, 0.04149888880470108, 0.04200822658388875, 0.042640770542228916, 0.04265181955675791, 0.042772903684521524, 0.04284379408018923, 0.04361763451394341, 0.04469116423936107, 0.05047400619057405, 0.05221493416292386, 0.053060464702652875, 0.05413963569017941, 0.05430467526939597, 0.05551053130818277) %>% round(digits = 4)
+feature_importance_other_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Control-other") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+
+# copied from python - Goal relavence
+feature_name <- c('f2_sum', 'f2_mean', 'f2_max', 'f2_sd', 'f3_sd', 'f3_max', 'f6_max', 'f3_mean', 'f6_sd', 'f6_mean', 'f3_sum', 'f5_max', 'f5_sd', 'f6_sum', 'f5_sum', 'f5_mean', 'f1_sd', 'f4_sd', 'f4_max', 'f4_mean', 'f4_sum', 'f1_max', 'f1_mean', 'f1_sum')
+feature_importance_val <- c(0.024375459895575755, 0.024730545759527756, 0.026645840219112277, 0.027266084017638748, 0.034613045770437965, 0.036553801802809545, 0.03721460414129669, 0.037616339422160035, 0.03915668561098521, 0.03934102699754092, 0.03937992758571692, 0.04046690780902632, 0.040838123901276974, 0.041763406776930925, 0.044513793217251345, 0.046506360512623, 0.04889470142303758, 0.050075729648709336, 0.050946261147992444, 0.05126602290938979, 0.05252260842008733, 0.05281581901654985, 0.05446430040229679, 0.058032603592026645) %>% round(digits = 4)
+feature_importance_relevance_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal relevance") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+
+# copied from python - Goal conducive
+feature_name <- c('f2_sd', 'f2_max', 'f2_mean', 'f2_sum', 'f3_mean', 'f6_sum', 'f6_mean', 'f6_sd', 'f3_max', 'f3_sum', 'f6_max', 'f3_sd', 'f1_sd', 'f4_sd', 'f5_sum', 'f4_mean', 'f5_max', 'f5_sd', 'f4_sum', 'f5_mean', 'f4_max', 'f1_max', 'f1_mean', 'f1_sum')
+feature_importance_val <- c(0.026446072667145396, 0.028082708603770868, 0.030909698280126515, 0.03216517608319264, 0.035016203087494834, 0.0359013257895294, 0.03612806901093803, 0.036402529163263746, 0.03662510460648093, 0.03874347140511033, 0.03923413726692023, 0.041036135080542324, 0.04398736022020602, 0.04411973640024404, 0.045189645823633835, 0.04626156625910449, 0.04765676938779669, 0.04793046001928042, 0.0481393138648509, 0.04874484666714621, 0.050587071349722054, 0.05079800840205553, 0.05409547680301096, 0.05579911375843368) %>% round(digits = 4)
+feature_importance_conducive_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal conduciveness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+
+# copied from python - pleasantness
+feature_name <- c('f2_max', 'f2_sd', 'f2_mean', 'f2_sum', 'f6_sd', 'f3_mean', 'f6_max', 'f3_sum', 'f6_mean', 'f3_sd', 'f3_max', 'f6_sum', 'f5_sd', 'f5_max', 'f1_sd', 'f5_mean', 'f4_sum', 'f5_sum', 'f4_max', 'f4_mean', 'f4_sd', 'f1_max', 'f1_sum', 'f1_mean')
+feature_importance_val <- c(0.023183956693362193, 0.02340569518585662, 0.026947954044902547, 0.02959475215106978, 0.03324411977007604, 0.03450933748008961, 0.03660727046201913, 0.03701228233249417, 0.037282002556151425, 0.03975488646301682, 0.04164528750455558, 0.04190861835083164, 0.042500758923103614, 0.04438612883462364, 0.04562228765726647, 0.04566402633063078, 0.04759440405177354, 0.04897878493572514, 0.049865063642439623, 0.05037991281249146, 0.052850820947176747, 0.05427915558833479, 0.0553910964636511, 0.057391396818357594) %>% round(digits = 4)
+feature_importance_pleasantness_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Pleasantness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+
+# copied from python - fairness
+feature_name <- c('f2_max', 'f2_sd', 'f2_sum', 'f2_mean', 'f6_sd', 'f3_sum', 'f3_max', 'f5_sd', 'f6_max', 'f3_sd', 'f6_sum', 'f6_mean', 'f3_mean', 'f5_max', 'f5_sum', 'f5_mean', 'f4_max', 'f1_max', 'f4_sum', 'f4_sd', 'f1_sd', 'f1_sum', 'f1_mean', 'f4_mean')
+feature_importance_val <- c(0.023560717945038584, 0.024016540925034947, 0.025824642140729895, 0.026320404499046005, 0.034023238881182666, 0.03522368009841873, 0.03651223117370678, 0.03890615259358035, 0.04011038746067986, 0.04071772503641044, 0.04211611755360665, 0.04250014339422482, 0.042553426222577274, 0.0440368053046154, 0.044486460159755534, 0.04582698389541113, 0.04769180925991827, 0.0494884451753851, 0.050129882522984455, 0.05050810010972425, 0.05221491192601672, 0.05357216195406471, 0.05390691614416888, 0.055752115623718554) %>% round(digits = 4)
+feature_importance_fairness_strat <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+
+feature_importance_strat <- rbind(feature_importance_other_strat, feature_importance_self_strat, feature_importance_fairness_strat, feature_importance_conducive_strat, feature_importance_relevance_strat, feature_importance_pleasantness_strat) %>% 
+  mutate_if(is.character, as.factor)
+
+
+feature_importance_strat %>%
+ggplot(data = .,
+       aes(
+         x = fct_rev(feature_name), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  facet_wrap(~appraisal) +
+  scale_fill_viridis_d(labels = legend_labels) +
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 13), title = element_text(size = 14)) + 
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r avg strat importance}
+importance_avg_strat <- feature_importance_strat %>%
+  group_by(appraisal ,Factor) %>%
+  summarise("Mean contribution" = mean(feature_importance_val), .groups = "drop")
+
+
+importance_avg_strat %>%
+  ggplot(data = .,
+         aes(x = Factor,
+             y = `Mean contribution`,
+             fill = Factor)) + 
+  coord_flip() + 
+  geom_col(aes(fill = Factor)) + 
+  facet_wrap(~appraisal) +
+  scale_fill_viridis_d() + 
+  theme_minimal() + 
+  ggtitle("Feature importance in RandomForest Classifier (avg per factor)") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```

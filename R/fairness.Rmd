@@ -1,0 +1,491 @@
+---
+title: "fairness"
+output: html_document
+author: tthejll
+---
+
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+library(ggcorrplot)
+
+```
+
+## Load data and clean data
+```{r load data}
+
+# we load in pre-processed data
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+  # select(-AU45)
+
+  # mutate(across(contains("AU"), ~(. - mean(.))/sd(.),.names = "std_{.col}")) # if we want to standardize
+
+```
+
+# Main expressions
+```{r main expression}
+d_au <- d_au_annotation %>%
+  select(contains("AU"))
+
+sevenf <- fa(d_au, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+print(sevenf$loadings, cutoff = 0.3)
+
+```
+
+
+
+### AU factor use
+```{r setup factor data}
+# first we create stratou factors
+f1_strat <- c("AU06", "AU07", "AU12")
+f2_strat <- c("AU01", "AU02")
+f3_strat = c("AU20", "AU25", "AU26")
+f4_strat = c("AU14", "AU17", "AU23")
+f5_strat = c("AU04", "AU07", "AU09")
+f6_strat = c("AU10", "AU15", "AU17")
+
+d_full_factors <- d_au_annotation %>%
+  rowwise() %>%
+  mutate(f1_mean_strat = ((AU06*0.982) * (AU07*0.446) * (AU12*0.882))/3,
+         f4_mean_strat = ((AU14*0.724) * (AU17*0.632) * (AU23*0.710))/3,
+         f4_mean = ((AU12*0.776) * (AU14*0.458))/2,
+         f6_mean = AU06*0.817) %>%
+  ungroup() %>%
+  select(contains("AU"), contains("mean"), fairness, ppt) %>%
+  filter(!is.na(fairness))
+
+```
+
+
+```{r factor 1}
+
+# choose the right factor
+d_temp_au <- d_full_factors %>%
+  select(contains("f1"), fairness, ppt) %>%
+  filter(!is.na(fairness)) %>%
+  mutate(frame_n = 1:nrow(.),
+         indicator = if_else(ppt != lag(ppt, default = first(ppt)), 1, 0)) %>%
+  group_by(ppt) %>%
+  mutate(frames = 1:n()) %>% ungroup()
+
+# Calculate mean for each participant and condition
+condition_means <- d_temp_au %>%
+  group_by(fairness, ppt) %>%
+  summarise(mean_value = mean(f1_mean_strat), sd = sd(f1_mean_strat), n = n(), .groups = "drop")
+
+# calculate grand means
+grand_mean <- d_temp_au %>%
+  group_by(fairness) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), median = median(f1_mean_strat), n = n(), .groups = "drop")
+
+count_zeros <- d_temp_au %>%
+  filter(f1_mean_strat == 0) %>%
+  group_by(fairness) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), n = n(), .groups = "drop") %>%
+  mutate(percent = (n/grand_mean$n)*100)
+
+# order High, Low, Medium
+percent_zeros <- count_zeros$n/grand_mean$n*100
+
+
+# labelling help
+ppt_levels <- c("301_neg2", "305_neg2", "306_neg1", "308_neg1", "309_neg1", "309_neg2", "312_neg1", "313_neg2", "316_neg2", "318_neg2", "319_neg1", "323_neg2", "324_neg2", "326_neg2", "327_neg1", "328_neg2", "332_neg1", "333_neg2", "334_neg1", "335_neg2", "338_neg2", "339_neg1", "341_neg2", "391_neg1")
+
+ppt_labels <- c(1:4, "5 - neg1", "5 - neg2", 6:23)
+
+ppt_label_map <- setNames(ppt_labels, ppt_levels)
+
+
+# plot overall effect  - saving ratio 800x450
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.07) +
+  geom_hline(
+    data = grand_mean,
+    aes(yintercept = mean_value, color = fairness), lty = "dashed") +
+  scale_color_viridis_d(name="Fairness") + 
+  theme_minimal() + 
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") +
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs")
+
+
+# plot participant effect - saving ratio 800x550
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.5) +
+  facet_wrap(~ppt, labeller = labeller(ppt = ppt_label_map), nrow = 6, ncol = 4) +
+  geom_hline(
+    data = condition_means,
+    aes(yintercept = mean_value, color = fairness), lty = "dashed") +
+  scale_color_viridis_d(name="Fairness") + 
+  theme_minimal() +
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") + 
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs (per participant)")
+
+# calculate overall effects
+# l v H
+d_temp_au %>%
+  filter(fairness != "Medium") %>%
+  wilcox.test(f1_mean_strat ~ fairness, data = .)
+
+# L v M
+d_temp_au %>%
+  filter(fairness != "High") %>%
+  wilcox.test(f1_mean_strat ~ fairness, data = .)
+
+# High v Medium
+d_temp_au %>%
+  filter(fairness != "Low") %>%
+  wilcox.test(f1_mean_strat ~ fairness, data = .)
+
+
+```
+
+```{r f1 per participant analysis}
+condition_means %>% 
+  ggplot(data = .,
+         aes(x = mean_value,
+             color = fairness,
+             fill = fairness)) + 
+  geom_density(alpha = 0.1) + 
+  scale_fill_viridis_d(name="Fairness") +
+  scale_color_viridis_d(name="Fairness") + 
+  theme_minimal() + 
+  labs(title = "Density plot for participant mean activation of Enjoyment Smile",
+       x = "Mean activation",
+       y = "Desnsity")
+
+# print means for participants
+condition_means %>%
+  group_by(fairness) %>%
+  summarise(mean = mean(mean_value), SD = sd(mean_value), n = n())
+
+# low v high
+condition_means %>%
+  filter(fairness != "Medium") %>%
+  wilcox.test(mean_value ~ fairness, data = .)
+
+# low v medium
+condition_means %>%
+  filter(fairness != "High") %>%
+  wilcox.test(mean_value ~ fairness, data = .)
+
+# medium v high
+condition_means %>%
+  filter(fairness != "Low") %>%
+  wilcox.test(mean_value ~ fairness, data = .)
+
+
+```
+
+
+
+```{r feature importance from python}
+
+# copied from python - fairness
+feature_name <- c('f2_max', 'f7_sd', 'f2_sd', 'f7_max', 'f2_sum', 'f2_mean', 'f7_mean',
+       'f3_sum', 'f7_sum', 'f3_mean', 'f3_max', 'f5_sd', 'f3_sd', 'f5_sum',
+       'f6_mean', 'f5_max', 'f5_mean', 'f1_sd', 'f4_max', 'f1_max', 'f4_sd',
+       'f4_mean', 'f1_sum', 'f4_sum', 'f1_mean')
+feature_importance_val <- c(0.021937339857960186, 0.0239948067525617, 0.025571202922547595, 0.026958396082484928, 0.027364134035299803, 0.027789402016484433, 0.03068936907179084, 0.030744098916478006, 0.03147700998672497, 0.03177455597995573, 0.03240103018866564, 0.03547158441522689, 0.03561227669581699, 0.041817249659673816, 0.04243470135884102, 0.042875730133309344, 0.042997811818866485, 0.04707193596565423, 0.049140437612966055, 0.04930417730408556, 0.05592240050066004, 0.05904000790502354, 0.061368964150938045, 0.06275396492504949, 0.06348741174293462) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r feature importance AU from python}
+
+# copied from python - fairness
+feature_name <- c('AU05', 'AU45', 'AU02', 'AU20', 'AU09', 'AU23', 'AU15', 'AU01', 'AU07', 'AU25', 'AU26', 'AU17', 'AU10', 'AU12', 'AU04', 'AU06', 'AU14')
+feature_importance_val <- c(0.015260091859424969, 0.02616528173268875, 0.028618235263777173, 0.04192296914601296, 0.04527068001075091, 0.0486390294983702, 0.04924646999909466, 0.05914607279462058, 0.06546508531213217, 0.06564984791431575, 0.06623416258272997, 0.06824040883722583, 0.07786289884534332, 0.07825377841253998, 0.08587602185319379, 0.08724711433883081, 0.09090185159894827) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness")
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col() + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+
+```{r feature importance Stratou from python}
+
+# copied from python - fairness
+feature_name <- c('f2_max', 'f2_sd', 'f2_sum', 'f2_mean', 'f6_sd', 'f3_sum', 'f3_max', 'f5_sd', 'f6_max', 'f3_sd', 'f6_sum', 'f6_mean', 'f3_mean', 'f5_max', 'f5_sum', 'f5_mean', 'f4_max', 'f1_max', 'f4_sum', 'f4_sd', 'f1_sd', 'f1_sum', 'f1_mean', 'f4_mean')
+feature_importance_val <- c(0.023560717945038584, 0.024016540925034947, 0.025824642140729895, 0.026320404499046005, 0.034023238881182666, 0.03522368009841873, 0.03651223117370678, 0.03890615259358035, 0.04011038746067986, 0.04071772503641044, 0.04211611755360665, 0.04250014339422482, 0.042553426222577274, 0.0440368053046154, 0.044486460159755534, 0.04582698389541113, 0.04769180925991827, 0.0494884451753851, 0.050129882522984455, 0.05050810010972425, 0.05221491192601672, 0.05357216195406471, 0.05390691614416888, 0.055752115623718554) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Fairness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+#### Factor analysis for fairness - this isn't used in the analyss.
+
+It was tested to see if there were differences in how expressions were used when looking at different levels of appraisal
+
+
+## fairness high
+```{r filter  fairness}
+# d_au_fairness_high <- d_au_annotation %>%
+  # filter(fairness == "High") %>%
+  # select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_fairness_high %>%
+#   KMO(.) # fine 
+# 
+# d_au_fairness_high %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_fairness_high))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+# d_au_fairness_high %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_fairness_high %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_fairness_high %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+# 
+# onef <- fa(d_au_fairness_high, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_fairness_high, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_fairness_high, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_fairness_high, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_fairness_high, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_fairness_high, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_fairness_high, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_fairness_high, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_fairness_high)
+
+```
+
+## fairness medium #######################################################
+```{r filter  fairness}
+# d_au_fairness_medium <- d_au_annotation %>%
+#   filter(fairness == "Medium") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_fairness_medium %>%
+#   KMO(.) # fine 
+# 
+# d_au_fairness_medium %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_fairness_medium))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+# 
+# d_au_fairness_medium %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_fairness_medium %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_fairness_medium %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+# 
+# onef <- fa(d_au_fairness_medium, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_fairness_medium, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_fairness_medium, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_fairness_medium, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_fairness_medium, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_fairness_medium, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_fairness_medium, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_fairness_medium, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_fairness_medium)
+
+```
+
+## fairness low #######################################################
+```{r filter  fairness}
+# d_au_fairness_low <- d_au_annotation %>%
+#   filter(fairness == "Low") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_fairness_low %>%
+#   KMO(.) # fine 
+# 
+# d_au_fairness_low %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_fairness_low))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+# d_au_fairness_low %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_fairness_low %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_fairness_low %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_fairness_low, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_fairness_low, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_fairness_low, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_fairness_low, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_fairness_low, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_fairness_low, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_fairness_low, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_fairness_low, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_fairness_low)
+
+```

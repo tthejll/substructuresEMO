@@ -1,0 +1,689 @@
+---
+title: "anger"
+output: html_document
+author: tthejll
+---
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+library(ggcorrplot)
+library(factoextra)
+library(cluster)
+
+```
+
+## Load data and clean data
+```{r load data}
+
+# we load in pre-processed data
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+  # select(-AU45)
+
+  # mutate(across(contains("AU"), ~(. - mean(.))/sd(.),.names = "std_{.col}")) # if we want to standardize
+
+```
+
+# Anger expressions.
+```{r main expression}
+d_au_anger_annotation <- d_au_annotation %>% # filter to have anger expressions
+  filter((emo_cat1 == "anger" | emo_cat1 == "frustration"),
+         emo_cat2 != "dissappointment") # remove disappointment as second emotion
+
+d_au <- d_au_anger_annotation %>%
+  select(contains("AU"))
+
+```
+
+## data checks
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+d_au %>% 
+  KMO(.)
+
+# bartletts spherical test - it's significant, so fine.
+d_au %>%
+  cor(.) %>%
+cortest.bartlett(., n = nrow(d_au_annotation))
+
+```
+## Number of factors:
+```{r factor number}
+# MAP test- suggest 1
+d_au %>% VSS(rotate = "oblimin", fm ="minres")
+
+# paralellel analysis - we are looking at components
+d_au %>% fa.parallel(fa = "pc") # five is ideal
+  
+# # scree plot
+d_au %>% scree()
+
+```
+```{r factors}
+# onef <- fa(d_au, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+fivef <- fa(d_au, nfactors = 5, rotate = "oblimin", fm = "minres") # best fit according to PA
+print(fivef$loadings, cutoff = 0.3)
+
+# sixf <- fa(d_au, nfactors = 6, rotate = "oblimin", fm = "minres") 
+# print(sixf$loadings, cutoff = 0.3)
+
+# sevenf <- fa(d_au, nfactors = 7, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sevenf$loadings, cutoff = 0.3)
+
+
+# set up factor tibble
+loadings_tmp <- fivef$loadings
+
+# get values
+n_aus <- length(rownames(loadings_tmp))
+factors_mat <- matrix(data = 0, nrow = n_aus, ncol = 5)
+
+for (row in 1:n_aus){ # loop through matrix-like shape
+  for (col in 1:5){
+  factors_mat[row, col] <- loadings_tmp[row, col]
+}}
+
+d_factors <- as_tibble(factors_mat) %>% # initialise d_factors with overall expressions
+  mutate(AUs = rownames(loadings_tmp),
+         ppt = "Overall")
+  
+```
+# One ppt
+
+```{r clean and run for one ppt}
+
+# set up relevant metrics to be caputed in loop
+ppt_kmos <- c()
+ppt_heywood <- c()
+final_factor <- c()
+ppts <- unique(d_au_annotation$ppt)
+eigen_factor <- c()
+pa_factors <- c()
+anger_length <-c()
+
+for (ppt_tmp in ppts){ # for each participant
+  
+  # filter ppt and emotion
+  d_au_single <- d_au_annotation %>%
+    filter(ppt == ppt_tmp,
+           (emo_cat1 == "anger" | emo_cat1 == "frustration"),
+           emo_cat2 != "dissappointment") %>%
+    select(contains("AU")) # get all AU frames
+  
+  # get nframes for anger
+  anger_length <- c(anger_length, nrow(d_au_single))
+  
+  # find all zero columns that will mess up factor analysis
+  all_zero <- d_au_single %>% 
+    summarise(across(everything(), ~ all(.==mean(.)))) %>% # see where all are equal to mean (only zero case)
+    pivot_longer(everything(), names_to = "column", values_to = "zero") %>%
+    filter(zero) %>%
+    pull(column) # get column name of all zero
+  
+  # remove all zero columns
+  d_au_single <- d_au_single %>% select(-all_zero)
+  
+  # run KMO test recommendation is KMO total >.5
+  kmo <- d_au_single %>% KMO()
+  ppt_kmos <- c(ppt_kmos, kmo$MSA)
+  
+  # identify number of factors
+  # eigen
+  nfactors_eig_larger1 <- sum(scree(d_au_single, fa = FALSE)$pcv > 1)
+  eigen_factor <- c(eigen_factor, nfactors_eig_larger1)
+  
+  # parallel analysis
+  pa_tmp <- fa.parallel(d_au_single, fa = "pc")
+  nfactor_pa <- pa_tmp$ncomp
+  pa_factors <- c(pa_factors, nfactor_pa)
+  
+  # initialize factor test for Heywood cases
+  new_factor = nfactor_pa
+  
+  # fit solution
+  f_solution <- fa(d_au_single, nfactors = nfactor_pa, rotate = "oblimin", fm = "minres")
+  
+  # test that there are no ultra-heywood cases - as long as there are heywood cases it'll substract one and refit
+  while(sum(f_solution$communality > 1) > 0){
+    new_factor <- new_factor -1
+    f_solution <- fa(d_au_single, nfactors = new_factor, rotate = "oblimin", fm = "minres")
+  } 
+  
+  # save heywood names and final number of factors
+  if (new_factor != nfactor_pa){
+    ppt_heywood <- c(ppt_heywood, ppt_tmp)
+    final_factor <- c(final_factor, new_factor)
+  } else {
+    ppt_heywood <- c(ppt_heywood, "NA")
+    final_factor <- c(final_factor, 0)
+  }
+
+  # get solution loadings
+  l_tmp <- f_solution$loadings
+  
+  # get n au used
+  n_aus <- length(rownames(l_tmp))
+  
+  # set up empty loading matrix
+  factors_mat <- matrix(data = 0, nrow = n_aus, ncol = new_factor) # we use new factor as it'll always be the right length
+  
+  # go through each row and column and add value from loadings
+  for (row in 1:n_aus){
+    for (col in 1:new_factor){
+      factors_mat[row, col] <- l_tmp[row, col]
+    }}
+  
+  temp_factor <- as_tibble(factors_mat) %>% # create new tibble for factors from matrix and bind
+    mutate(AUs = rownames(l_tmp),
+           ppt = ppt_tmp)
+  
+  d_factors <- bind_rows(d_factors, temp_factor) # bind temp row to big tibble
+}
+  
+
+# KMO metrics
+ppt_kmo_min <- min(ppt_kmos)
+ppt_kmo_max <- max(ppt_kmos)
+ppt_kmo_mean <- mean(ppt_kmos)
+ppt_kmo_sd <- sd(ppt_kmos)
+```
+```{r tidy up the factors}
+
+#renaming and label helps
+ppt_levels <- c("301_neg2", "305_neg2", "306_neg1", "308_neg1", "309_neg1", "309_neg2", "312_neg1", "313_neg2", "316_neg2", "318_neg2", "319_neg1", "323_neg2", "324_neg2", "326_neg2", "327_neg1", "328_neg2", "332_neg1", "333_neg2", "334_neg1", "335_neg2", "338_neg2", "339_neg1", "341_neg2", "391_neg1") # get levels in data
+
+ppt_labels <- c(1:4, "5 - neg1", "5 - neg2", 6:23) # get ppt new names
+
+ppt_label_map <- setNames(ppt_labels, ppt_levels) # create map
+
+label_help <- c("Overall", 1:4, "5 - neg1", "5 - neg2", 6:23) # same as ppt_label, but with overall
+
+
+# manage a rename factor
+d_factors <- d_factors %>% 
+  mutate(ppt = recode(ppt, !!!ppt_label_map), # the recodes to the new participant names
+         ppt = factor(ppt, levels = rev(label_help)),
+         AUs = as.factor(AUs)) %>%
+  rename(F1 = V1, F2 = V2, F3 = V3, F4 = V4, F5 = V5) # rename vectors to factors
+
+# Generate all possible combinations of the ppt and AU variables
+all_combinations <- expand_grid(
+  AUs = unique(d_factors$AUs),
+  ppt = unique(d_factors$ppt)
+)
+
+# Merge all combination and replace missing values with 0
+d_factors <- all_combinations %>%
+  left_join(d_factors, by = c("AUs", "ppt")) # this ensures that if AU was removed in EFA its included from now on
+
+
+```
+
+
+```{r trying to order factors}
+d_factor_binary <- d_factors %>%
+  mutate(
+    F1 = ifelse(F1 < 0.3, 0, 1),
+    F2 = ifelse(F2 < 0.3, 0, 1),
+    F3 = ifelse(F3 < 0.3, 0, 1),
+    F4 = ifelse(F4 < 0.3, 0, 1),
+    F5 = ifelse(F5 < 0.3, 0, 1),
+    F1 = replace_na(F1, 0),
+    F2 = replace_na(F2, 0),
+    F3 = replace_na(F3, 0),
+    F4 = replace_na(F4, 0),
+    F5 = replace_na(F5, 0)) %>%
+  filter(ppt != "Overall")
+
+# check hamming distance to overall factor and move according to that
+
+# setup new ordered factors
+d_factors_ordered <- d_factors %>%
+  filter(ppt == "Overall")
+
+# create binary activation
+d_overall_binary <- d_factors %>%
+  mutate(
+    F1 = ifelse(F1 < 0.3, 0, 1),
+    F2 = ifelse(F2 < 0.3, 0, 1),
+    F3 = ifelse(F3 < 0.3, 0, 1),
+    F4 = ifelse(F4 < 0.3, 0, 1),
+    F5 = ifelse(F5 < 0.3, 0, 1)) %>%
+  filter(ppt == "Overall")
+
+# Now we loop over all participants and find their new factor ordering and rename
+# their columns accordingly
+
+for (ppt_tmp in ppt_labels){
+  # filter for the right ppt
+  d_tmp <- d_factor_binary %>%
+    filter(ppt == ppt_tmp)
+  
+  # initialise their hamming distance tibble
+  d_hamming <- tibble(baseline = character(), test_factor = character(), hamming_dist = numeric())
+  
+  # for each factor
+  for (fac1 in c("F1", "F2", "F3", "F4", "F5")){
+    baseline = c() # get baseline from d_overall_binary
+    test_factor = c() # get the factor that is tested against
+    hamming_dist = c() # get hamming_dist
+    for (fac2 in c("F1", "F2", "F3", "F4", "F5")){ # compare against all factors
+      baseline <- c(baseline, fac1) # append base factor
+      test_factor = c(test_factor, fac2) # append test factor
+      
+      baseline_vec <- d_overall_binary %>% # get baseline vector
+        pull(fac1)
+      
+      test_vec <- d_tmp %>% # get test vector
+        pull(fac2)
+      
+      if (sum(test_vec) == 0){ # if the factor is not found for the ppt its all 0
+        hamming_dist_val <- NA # no distance to ensure it's for the last
+      } else {
+        hamming_dist_val <- sum(baseline_vec != test_vec) # sum all differences
+      }
+      
+      hamming_dist <- c(hamming_dist, hamming_dist_val) # append distance
+    }
+    tmp_tibble <- tibble(baseline = baseline, test_factor = test_factor, hamming_dist = hamming_dist) # create temp tibble of distances
+    d_hamming <- bind_rows(d_hamming, tmp_tibble) # bind to all distances for ppt
+  }
+  
+  
+  # we now need the new order from the distances just calculated
+  new_factors_order <- c() # initialise new order
+  
+  for (fac1 in c("F1", "F2", "F3", "F4", "F5")){ # for each baseline factor
+    d_hamming_tmp <- d_hamming %>%
+      filter(baseline == fac1, # filter baseline 
+             !test_factor %in% new_factors_order) # make sure that we haven't used the factor yet
+    min_hamming <- min(d_hamming_tmp$hamming_dist, na.rm = TRUE) # get the minimum distance
+    if (min_hamming == Inf){ # if dist == NA we append the factor we test with
+      new_factors_order <- c(new_factors_order, fac1)
+    } else { # append the factor name for the closest factor (if ties the alphabetical first)
+      factor_tmp <- d_hamming_tmp %>%
+        filter(hamming_dist == min_hamming) %>%
+        pull(test_factor)
+      
+      # if there are ties we check overlap
+      # if (length(factor_tmp) != 1) {
+      #   
+      # }
+      factor_tmp <- factor_tmp[1] # get the first element, in case of ties 
+      new_factors_order <- c(new_factors_order, factor_tmp) # append closet
+    }
+  }
+  
+  # now we need to reorder using the new factor names
+  d_ppt_tmp_ordered <- d_factors %>%
+    filter(ppt == ppt_tmp)
+  
+  # organise according to new factor order
+  d_ppt_tmp_ordered <- d_ppt_tmp_ordered %>%
+    select("AUs", "ppt", all_of(new_factors_order))
+  
+  # new colnames 
+  colnames(d_ppt_tmp_ordered) <- c("AUs", "ppt", "F1", "F2", "F3", "F4", "F5")
+  
+  # append to reordered tibble
+  d_factors_ordered <- bind_rows(d_factors_ordered, d_ppt_tmp_ordered)
+}
+```
+
+```{r facet plot ordered}
+
+d_factors_ordered %>%
+  mutate(
+    F1 = ifelse(F1 < 0.3, NA, F1),
+    F2 = ifelse(F2 < 0.3, NA, F2),
+    F3 = ifelse(F3 < 0.3, NA, F3),
+    F4 = ifelse(F4 < 0.3, NA, F4),
+    F5 = ifelse(F5 < 0.3, NA, F5)) %>%
+  pivot_longer(cols = contains("F"), names_to = "Factor", values_to = "Loadings") %>%
+  ggplot(data = .,
+         aes(x = AUs, 
+             y = ppt,
+             fill = Loadings)) +
+  facet_wrap(~Factor, nrow = 3) +
+  geom_tile(color = "white",
+            lwd = 0.4,
+            linetype = 1) + 
+  scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+  theme_minimal() +
+  labs(title = "Factor loadings for all factors", x = "AUs", y = "Participant", fill = "Factor loading") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 8),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5), 
+        legend.position = "none")
+  
+
+
+```
+
+
+
+```{r clustering}
+
+d_ppt_col <- d_factors_ordered %>% # for correlation matrix
+  mutate(
+    F1 = replace_na(F1, 0),
+    F2 = replace_na(F2, 0),
+    F3 = replace_na(F3, 0),
+    F4 = replace_na(F4, 0),
+    F5 = replace_na(F5, 0)) %>%
+  pivot_longer(cols = contains("F"), names_to = "Factor", values_to = "Loadings") %>%
+  pivot_wider(names_from = ppt, values_from = Loadings) %>%
+  select(-c(AUs, Factor))
+
+d_fau_col <- d_factors_ordered %>% # for hierarchical ordering
+  mutate(
+    F1 = replace_na(F1, 0),
+    F2 = replace_na(F2, 0),
+    F3 = replace_na(F3, 0),
+    F4 = replace_na(F4, 0),
+    F5 = replace_na(F5, 0)) %>%
+  pivot_wider(names_from = AUs, values_from = contains("F"))
+  
+
+#define linkage methods
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+#function to compute agglomerative coefficient
+ac <- function(x) {
+  df <- d_fau_col %>%
+    select(-ppt) 
+  agnes(df, method = x)$ac
+}
+
+#calculate agglomerative coefficient for each clustering linkage method
+sapply(m, ac)
+
+# fit agglomerative clustering
+clust <- agnes(d_fau_col[,2:86], method = "ward")
+
+# plot tree
+pltree(clust, cex = 0.6, hang = -1, main = "Dendrogram",labels =  d_fau_col$ppt)
+
+# fit optimal number of clusters
+gap_stat <- clusGap(d_fau_col[,2:86], FUN = hcut, nstart = 25, K.max = 10, B = 50)
+
+# plot cluster fit
+gap_tibble <- tibble("Number of clusters" = 1:10, "Gap statistic" = gap_stat$Tab[,3], "gap_se" = gap_stat$Tab[,4])
+
+gap_tibble %>%
+  ggplot(data = .,
+         aes(x = `Number of clusters`,
+             y = `Gap statistic`,)) + 
+  geom_line() + 
+  geom_errorbar(aes(ymin=`Gap statistic`-gap_se, ymax=`Gap statistic`+gap_se), width=.1, alpha = 0.5) +
+  theme_minimal() + 
+  labs(title = "Optimal number of clusters") +
+  scale_x_continuous(breaks = 1:10)
+  
+# correlations
+# Compute pairwise correlations between rows
+cor_matrix <- cor(d_ppt_col, method = "pearson") # Transpose to correlate rows
+
+# Convert to long format for ggplot
+cor_tibble <- as_tibble(cor_matrix) %>%
+  mutate(ppt = colnames(.)) %>%
+  select(ppt, everything()) %>%
+  pivot_longer(cols = -ppt, names_to = "ppt2", values_to = "Correlation") %>%
+  mutate(ppt = factor(ppt, levels = label_help[clust$order]),
+         ppt2 = factor(ppt2, levels = rev(label_help[clust$order])))
+
+
+# Plot the correlation matrix
+ggplot(cor_tibble, aes(x = ppt, y = ppt2, fill = Correlation)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "#008837", mid = "white", high = "#7B3294", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Pairwise Correlation Matrix (Factors)", x = "Participant", y = "Participant", fill = "Correlation") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r kmeans give same results}
+gap_stat_k <- clusGap(d_fau_col[,2:86], FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+
+# plot cluster fit
+gap_tibble_k <- tibble("Number of clusters" = 1:10, "Gap statistic" = gap_stat_k$Tab[,3], "gap_se" = gap_stat_k$Tab[,4])
+
+gap_tibble_k %>%
+  ggplot(data = .,
+         aes(x = `Number of clusters`,
+             y = `Gap statistic`,)) + 
+  geom_line() + 
+  geom_errorbar(aes(ymin=`Gap statistic`-gap_se, ymax=`Gap statistic`+gap_se), width=.1, alpha = 0.5) +
+  theme_minimal() + 
+  labs(title = "Optimal number of clusters") +
+  scale_x_continuous(breaks = 1:10)
+
+```
+
+# Below are unused code for the chapter.
+Unoreded plotting
+
+```{r plot F1}
+# d_factors %>%
+#   select(F1, AUs, ppt) %>%
+#   mutate(F1 = ifelse(F1 < 0.3, NA, F1)) %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = F1)) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F1", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+```
+
+```{r plot F2}
+# label_help <- c("Overall", 1:4, "5 - neg1", "5 - neg2", 6:23)
+# 
+# d_factors %>%
+#   select(F2, AUs, ppt) %>%
+#   mutate(F2 = ifelse(F2 < 0.3, NA, F2),
+#          ppt = factor(ppt, levels = rev(label_help))) %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = F2)) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F2", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+```
+
+```{r plot F3}
+# label_help <- c("Overall", 1:4, "5 - neg1", "5 - neg2", 6:23)
+# 
+# d_factors %>%
+#   select(F3, AUs, ppt) %>%
+#   mutate(F3 = ifelse(F3 < 0.3, NA, F3),
+#          ppt = factor(ppt, levels = rev(label_help))) %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = F3)) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F3", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+```
+
+```{r plot F4}
+# label_help <- c("Overall", 1:4, "5 - neg1", "5 - neg2", 6:23)
+# 
+# d_factors %>%
+#   select(F4, AUs, ppt) %>%
+#   mutate(F4 = ifelse(F4 < 0.3, NA, F4),
+#          ppt = factor(ppt, levels = rev(label_help))) %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = F4)) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_x_discrete(position = "top") + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F4", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 30))  # Rotate x-axis labels
+
+```
+
+```{r plot F5}
+# label_help <- c("Overall", 1:4, "5 - neg1", "5 - neg2", 6:23)
+# 
+# d_factors %>%
+#   select(F5, AUs, ppt) %>%
+#   mutate(F5 = ifelse(F5 < 0.3, NA, F5),
+#          ppt = factor(ppt, levels = rev(label_help))) %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = F5)) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F5", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+
+```
+```{r facet unordered plot}
+
+# d_factors %>%
+#   mutate(
+#     F1 = ifelse(F1 < 0.3, NA, F1),
+#     F2 = ifelse(F2 < 0.3, NA, F2),
+#     F3 = ifelse(F3 < 0.3, NA, F3),
+#     F4 = ifelse(F4 < 0.3, NA, F4),
+#     F5 = ifelse(F5 < 0.3, NA, F5),
+#     ppt = factor(ppt, levels = rev(label_help))) %>%
+#   pivot_longer(cols = contains("F"), names_to = "Factor", values_to = "Loadings") %>%
+#   ggplot(data = .,
+#          aes(x = AUs, 
+#              y = ppt,
+#              fill = Loadings)) +
+#   facet_wrap(~Factor) +
+#   geom_tile(color = "white",
+#             lwd = 0.4,
+#             linetype = 1) + 
+#   scale_fill_gradient2(low = "#fde725", high = "#440154", midpoint = 0, na.value = "#00000000") +
+#   theme_minimal() +
+#   labs(title = "Factor loadings for F5", x = "AUs", y = "Participant", fill = "Factor loading") +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#   
+
+
+```
+
+different distance metric for ordering
+```{r correlation closeness}
+
+# d_overall <- d_factors %>%
+#   filter(ppt == "Overall")
+# 
+# d_tmp <- d_factors %>%
+#   filter(ppt == "1")
+# d_cor <- tibble(baseline = character(), test_factor = character(), cor_dist = numeric(), cor_order = numeric())
+# for (fac1 in c("F1", "F2", "F3", "F4", "F5")){
+#   baseline = c()
+#   test_factor = c()
+#   cor_dist = c()
+#   for (fac2 in c("F1", "F2", "F3", "F4", "F5")){
+#     baseline <- c(baseline, fac1)
+#     test_factor = c(test_factor, fac2)
+#   
+#     baseline_vec <- d_overall %>%
+#       pull(fac1)
+#     
+#     test_vec <- d_tmp %>%
+#       pull(fac2)
+#     
+#     cor_dist_val <- cor(baseline_vec, test_vec, method = "pearson")
+#     cor_dist <- c(cor_dist, cor_dist_val)
+#   }
+#   order_c <- 6- rank(cor_dist)
+#   tmp_tibble <- tibble(baseline = baseline, test_factor = test_factor, cor_dist = cor_dist, cor_order = order_c)
+#   d_cor <- bind_rows(d_cor, tmp_tibble)
+# }
+
+
+```
+
+
+```{r sum across all associated AUs}
+# # This codes looks at activation of the different anger factors when 'averaged' across ppts
+# 
+# avg_presence <- d_factors_ordered %>%
+#   mutate(
+#     F1 = ifelse(F1 < 0.3, NA, F1), # looks at activations when salience is larger than 0.3
+#     F2 = ifelse(F2 < 0.3, NA, F2),
+#     F3 = ifelse(F3 < 0.3, NA, F3),
+#     F4 = ifelse(F4 < 0.3, NA, F4),
+#     F5 = ifelse(F5 < 0.3, NA, F5),
+#     F1 = replace_na(F1, 0),
+#     F2 = replace_na(F2, 0),
+#     F3 = replace_na(F3, 0),
+#     F4 = replace_na(F4, 0),
+#     F5 = replace_na(F5, 0)
+#   ) %>%
+#   group_by(AUs) %>%
+#   summarise(m_f1 = mean(F1),
+#             m_f2 = mean(F2),
+#             m_f3 = mean(F3),
+#             m_f4 = mean(F4),
+#             m_f5 = mean(F5))
+# 
+# # Compute dot product correctly - dot product is the weighted average
+# summarised_aus <- d_au %>%
+#   mutate(dot_product1 = as.matrix(d_au) %*% avg_presence$m_f1,
+#          dot_product2 = as.matrix(d_au) %*% avg_presence$m_f2,
+#          dot_product3 = as.matrix(d_au) %*% avg_presence$m_f3,
+#          dot_product4 = as.matrix(d_au) %*% avg_presence$m_f4,
+#          dot_product5 = as.matrix(d_au) %*% avg_presence$m_f5) %>%
+#   summarise(m1 = mean(dot_product1), sd1 = sd(dot_product1),
+#             m2 = mean(dot_product2), sd2 = sd(dot_product2),
+#             m3 = mean(dot_product3), sd3 = sd(dot_product3),
+#             m4 = mean(dot_product4), sd4 = sd(dot_product4),
+#             m5 = mean(dot_product5), sd5 = sd(dot_product5))
+# 
+# # Print result
+# print(summarised_aus)
+
+
+```

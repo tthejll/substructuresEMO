@@ -1,0 +1,489 @@
+---
+title: "goal_relevance"
+output: html_document
+author: tthejll
+---
+
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+library(ggcorrplot)
+
+```
+
+## Load data and clean data
+```{r load data}
+
+# we load in pre-processed data
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+  # select(-AU45)
+
+  # mutate(across(contains("AU"), ~(. - mean(.))/sd(.),.names = "std_{.col}")) # if we want to standardize
+
+```
+
+# Main expressions
+```{r main expression}
+# from main-factor analysis
+d_au <- d_au_annotation %>%
+  select(contains("AU"))
+
+sevenf <- fa(d_au, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+print(sevenf$loadings, cutoff = 0.3)
+
+```
+
+
+
+### AU factor use
+```{r setup factor data}
+# first we create stratou factors
+f1_strat <- c("AU06", "AU07", "AU12")
+f2_strat <- c("AU01", "AU02")
+f3_strat = c("AU20", "AU25", "AU26")
+f4_strat = c("AU14", "AU17", "AU23")
+f5_strat = c("AU04", "AU07", "AU09")
+f6_strat = c("AU10", "AU15", "AU17")
+
+d_full_factors <- d_au_annotation %>%
+  rowwise() %>%
+  mutate(f1_mean_strat = ((AU06*0.982) * (AU07*0.446) * (AU12*0.882))/3,
+         f4_mean_strat = ((AU14*0.724) * (AU17*0.632) * (AU23*0.710))/3,
+         f4_mean = ((AU12*0.776) * (AU14*0.458))/2,
+         f6_mean = AU06*0.817) %>%
+  ungroup() %>%
+  select(contains("AU"), contains("mean"), goal_relevance, ppt) %>%
+  filter(!is.na(goal_relevance))
+
+```
+
+### AU factor use
+```{r factor 1}
+
+# choose the right factor
+d_temp_au <- d_full_factors %>%
+  select(contains("f1"), goal_relevance, ppt) %>%
+  filter(!is.na(goal_relevance)) %>%
+  mutate(frame_n = 1:nrow(.),
+         indicator = if_else(ppt != lag(ppt, default = first(ppt)), 1, 0)) %>%
+  group_by(ppt) %>%
+  mutate(frames = 1:n()) %>% ungroup()
+
+# Calculate mean for each participant and condition
+condition_means <- d_temp_au %>%
+  group_by(goal_relevance, ppt) %>%
+  summarise(mean_value = mean(f1_mean_strat), sd = sd(f1_mean_strat), n = n(), .groups = "drop")
+
+# calculate grand means
+grand_mean <- d_temp_au %>%
+  group_by(goal_relevance) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), median = median(f1_mean_strat), n = n(), .groups = "drop")
+
+count_zeros <- d_temp_au %>%
+  filter(f1_mean_strat == 0) %>%
+  group_by(goal_relevance) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), n = n(), .groups = "drop") %>%
+  mutate(percent = (n/grand_mean$n)*100)
+
+# order High, Low, Medium
+percent_zeros <- count_zeros$n/grand_mean$n*100
+
+
+# labelling help
+ppt_levels <- c("301_neg2", "305_neg2", "306_neg1", "308_neg1", "309_neg1", "309_neg2", "312_neg1", "313_neg2", "316_neg2", "318_neg2", "319_neg1", "323_neg2", "324_neg2", "326_neg2", "327_neg1", "328_neg2", "332_neg1", "333_neg2", "334_neg1", "335_neg2", "338_neg2", "339_neg1", "341_neg2", "391_neg1")
+
+ppt_labels <- c(1:4, "5 - neg1", "5 - neg2", 6:23)
+
+ppt_label_map <- setNames(ppt_labels, ppt_levels)
+
+
+# plot overall effect  - saving ratio 800x450
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.07) +
+  geom_hline(
+    data = grand_mean,
+    aes(yintercept = mean_value, color = goal_relevance), lty = "dashed") +
+  scale_color_viridis_d(name="Goal relevance") + 
+  theme_minimal() + 
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") +
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs")
+
+
+# plot participant effect - saving ratio 800x550
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.5) +
+  facet_wrap(~ppt, labeller = labeller(ppt = ppt_label_map), nrow = 6, ncol = 4) +
+  geom_hline(
+    data = condition_means,
+    aes(yintercept = mean_value, color = goal_relevance), lty = "dashed") +
+  scale_color_viridis_d(name="Goal relevance") + 
+  theme_minimal() +
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") + 
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs (per participant)")
+
+# calculate overall effects
+# l v H
+d_temp_au %>%
+  filter(goal_relevance != "Medium") %>%
+  wilcox.test(f1_mean_strat ~ goal_relevance, data = .)
+
+# L v M
+d_temp_au %>%
+  filter(goal_relevance != "High") %>%
+  wilcox.test(f1_mean_strat ~ goal_relevance, data = .)
+
+# High v Medium
+d_temp_au %>%
+  filter(goal_relevance != "Low") %>%
+  wilcox.test(f1_mean_strat ~ goal_relevance, data = .)
+
+
+```
+
+```{r f1 per participant analysis}
+condition_means %>% 
+  ggplot(data = .,
+         aes(x = mean_value,
+             color = goal_relevance,
+             fill = goal_relevance)) + 
+  geom_density(alpha = 0.1) + 
+  scale_fill_viridis_d(name="Goal relevance") +
+  scale_color_viridis_d(name="Goal relevance") + 
+  theme_minimal() + 
+  labs(title = "Density plot for participant mean activation of Enjoyment Smile",
+       x = "Mean activation",
+       y = "Desnsity")
+
+# print means for participants
+condition_means %>%
+  group_by(goal_relevance) %>%
+  summarise(mean = mean(mean_value), SD = sd(mean_value), n = n())
+
+# low v high
+condition_means %>%
+  filter(goal_relevance != "Medium") %>%
+  wilcox.test(mean_value ~ goal_relevance, data = .)
+
+# low v medium
+condition_means %>%
+  filter(goal_relevance != "High") %>%
+  wilcox.test(mean_value ~ goal_relevance, data = .)
+
+# medium v high
+condition_means %>%
+  filter(goal_relevance != "Low") %>%
+  wilcox.test(mean_value ~ goal_relevance, data = .)
+
+```
+
+
+```{r feature importance from python}
+
+# copied from python
+feature_name <- c('f7_max', 'f7_sd', 'f7_mean', 'f2_sum', 'f2_mean', 'f2_max', 'f7_sum', 'f2_sd', 'f3_sd', 'f3_mean', 'f3_sum', 'f5_sd', 'f3_max', 'f5_max', 'f5_sum', 'f5_mean', 'f1_max', 'f1_sd', 'f4_max', 'f6_mean', 'f1_sum', 'f1_mean', 'f4_mean', 'f4_sum', 'f4_sd')
+feature_importance_val <- c(0.023255009500808995, 0.025274930668686534, 0.02749152445300767, 0.02814931758180065, 0.028190360457677265, 0.02919111680051068, 0.02948369992618792, 0.030912832287168488, 0.03324433036603273, 0.03426830249097244, 0.03529597286159517, 0.03589575587842027, 0.035988612965217985, 0.036650719246442365, 0.0388595150679673, 0.04012851179641578, 0.044630743397731744, 0.04608831773427856, 0.04927713559564446, 0.050265594330909984, 0.05473195918602198, 0.05665260052312683, 0.05689401793824851, 0.05947179220721726, 0.06970732673790847) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name)) %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r feature importance AU from python}
+
+# copied from python - goal relevance
+feature_name <- c('AU05', 'AU45', 'AU02', 'AU09', 'AU15', 'AU25', 'AU23', 'AU17', 'AU26', 'AU01', 'AU07', 'AU10', 'AU20', 'AU04', 'AU06', 'AU12', 'AU14')
+feature_importance_val <- c(0.017963011717591595, 0.022671865079814873, 0.034323693375924245, 0.045155631412774414, 0.04673095696511145, 0.05420529042590098, 0.0543586615583751, 0.056197584251058065, 0.057548652916409225, 0.05874304496958367, 0.06372815089755689, 0.06671243436329592, 0.07226828965162965, 0.07378853391139752, 0.08454322578644531, 0.0946527892841696, 0.09640818343296148) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Goal Relevance")
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col() + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+
+
+
+```{r feature importance Stratou from python}
+
+# copied from python - Goal relavence
+feature_name <- c('f2_sum', 'f2_mean', 'f2_max', 'f2_sd', 'f3_sd', 'f3_max', 'f6_max', 'f3_mean', 'f6_sd', 'f6_mean', 'f3_sum', 'f5_max', 'f5_sd', 'f6_sum', 'f5_sum', 'f5_mean', 'f1_sd', 'f4_sd', 'f4_max', 'f4_mean', 'f4_sum', 'f1_max', 'f1_mean', 'f1_sum')
+feature_importance_val <- c(0.024375459895575755, 0.024730545759527756, 0.026645840219112277, 0.027266084017638748, 0.034613045770437965, 0.036553801802809545, 0.03721460414129669, 0.037616339422160035, 0.03915668561098521, 0.03934102699754092, 0.03937992758571692, 0.04046690780902632, 0.040838123901276974, 0.041763406776930925, 0.044513793217251345, 0.046506360512623, 0.04889470142303758, 0.050075729648709336, 0.050946261147992444, 0.05126602290938979, 0.05252260842008733, 0.05281581901654985, 0.05446430040229679, 0.058032603592026645) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Goal relevance") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+
+#### Factor analysis for Goal_relevance - this isn't used in the analyss.
+
+It was tested to see if there were differences in how expressions were used when looking at different levels of appraisal
+
+
+## goal_relevance high
+```{r filter  goal_relevance}
+# d_au_goal_relevance_high <- d_au_annotation %>%
+#   filter(goal_relevance == "High") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# # Kaiser-Meyer-Olkin factor adequacy
+# d_au_goal_relevance_high %>%
+#   KMO(.) # fine 
+# 
+# d_au_goal_relevance_high %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_goal_relevance_high))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+# 
+# d_au_goal_relevance_high %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_goal_relevance_high %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_goal_relevance_high %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_goal_relevance_high, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_goal_relevance_high, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_goal_relevance_high, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_goal_relevance_high, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_goal_relevance_high, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_goal_relevance_high, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_goal_relevance_high, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_goal_relevance_high, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_goal_relevance_high)
+
+```
+
+## goal_relevance medium #######################################################
+```{r filter  goal_relevance}
+# d_au_goal_relevance_medium <- d_au_annotation %>%
+#   filter(goal_relevance == "Medium") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_goal_relevance_medium %>%
+#   KMO(.) # fine 
+# 
+# d_au_goal_relevance_medium %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_goal_relevance_medium))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+# d_au_goal_relevance_medium %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_goal_relevance_medium %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_goal_relevance_medium %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_goal_relevance_medium, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_goal_relevance_medium, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_goal_relevance_medium, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_goal_relevance_medium, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_goal_relevance_medium, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_goal_relevance_medium, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_goal_relevance_medium, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_goal_relevance_medium, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_goal_relevance_medium)
+
+```
+
+## goal_relevance low #######################################################
+```{r filter  goal_relevance}
+# d_au_goal_relevance_low <- d_au_annotation %>%
+#   filter(goal_relevance == "Low") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# # Kaiser-Meyer-Olkin factor adequacy
+# d_au_goal_relevance_low %>%
+#   KMO(.) # fine 
+# 
+# d_au_goal_relevance_low %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_goal_relevance_low))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+# d_au_goal_relevance_low %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_goal_relevance_low %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_goal_relevance_low %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+# 
+# onef <- fa(d_au_goal_relevance_low, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_goal_relevance_low, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_goal_relevance_low, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_goal_relevance_low, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_goal_relevance_low, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_goal_relevance_low, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_goal_relevance_low, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_goal_relevance_low, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_goal_relevance_low)
+
+```

@@ -1,0 +1,146 @@
+---
+title: "factor_analysis"
+output: html_document
+author: tthejll
+---
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+library(ggcorrplot)
+
+```
+
+## Load data and clean data
+```{r load data}
+
+# we load in pre-processed data
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+  # select(-AU45)
+
+  # mutate(across(contains("AU"), ~(. - mean(.))/sd(.),.names = "std_{.col}")) # if we want to standardize
+
+```
+```{r participant numbers}
+
+## get number of frames per participant
+d_au_annotation %>%
+  group_by(ppt) %>%
+  summarise(n = n())
+
+```
+
+
+# Visualise initial data
+```{r visualise data brief}
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  pivot_longer(cols = everything(), names_to = "AU", values_to = "Activation") %>%
+  ggplot(aes(x = Activation)) + 
+  geom_histogram(bins = 15, fill = "lightblue", color = "black") + 
+  facet_wrap(~ AU, scales = "free") + 
+  labs(
+    title = "Histogram for all AUs",
+    x = "Activation",
+    y = "Frequency") + 
+  theme_minimal()
+
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  cor(.) %>%
+  ggcorrplot()
+```
+
+```{r see how much correlation with other variables}
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  cor(.) %>% as.tibble() %>%
+  summarise(mutate(across(everything(), ~(sum(abs(.)))/17)))
+
+
+```
+
+
+# Main factor analysis
+
+## data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  # select(-c(AU04_r, AU26_r)) %>%
+  KMO(.)
+
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  # select(-c(AU04_r, AU26_r)) %>%
+  cor(.) %>%
+cortest.bartlett(., n = nrow(d_au_annotation))
+
+```
+
+## Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+d_au_annotation %>%
+  select(contains("AU")) %>%
+VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  fa.parallel(., main = "Parallel Analysis", n.iter = 100, fa = "pc")
+
+
+d_au_annotation %>%
+  select(contains("AU")) %>%
+  scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+## Testing different factors
+
+```{r factor analysis}
+d_au <- d_au_annotation %>%
+  select(contains("AU")) # %>%
+  # select(-c(AU04_r, AU26_r))
+  
+
+onef <- fa(d_au, nfactors = 1, rotate = "oblimin", fm = "minres")
+print(onef$loadings, cutoff = 0.3)
+
+twof <- fa(d_au, nfactors = 2, rotate = "oblimin", fm = "minres")
+print(twof$loadings, cutoff = 0.3)
+
+threef <- fa(d_au, nfactors = 3, rotate = "oblimin", fm = "minres")
+print(threef$loadings, cutoff = 0.3)
+
+fourf <- fa(d_au, nfactors = 4, rotate = "oblimin", fm = "minres")
+print(fourf$loadings, cutoff = 0.3)
+
+fivef <- fa(d_au, nfactors = 5, rotate = "oblimin", fm = "minres")
+print(fivef$loadings, cutoff = 0.3)
+
+sixf <- fa(d_au, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+print(sixf$loadings, cutoff = 0.3, sort = T)
+
+sevenf <- fa(d_au, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+print(sevenf$loadings, cutoff = 0.3)
+
+eigthf <- fa(d_au, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+print(eigthf$loadings, cutoff = 0.3)
+
+
+
+```
+
+
+
+
+
+

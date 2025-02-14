@@ -1,0 +1,68 @@
+---
+title: "GLME-example"
+output: html_document
+---
+
+```{r setup}
+library(lmerTest)
+library(tidyverse)
+```
+
+```{r load and setup data}
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+
+
+# we create stratou factors
+f1_strat <- c("AU06", "AU07", "AU12")
+f2_strat <- c("AU01", "AU02")
+f3_strat = c("AU20", "AU25", "AU26")
+f4_strat = c("AU14", "AU17", "AU23")
+f5_strat = c("AU04", "AU07", "AU09")
+f6_strat = c("AU10", "AU15", "AU17")
+
+d_full_factors <- d_au_annotation %>%
+  rowwise() %>%
+  mutate(f1_mean_strat = ((AU06*0.982) * (AU07*0.446) * (AU12*0.882))/3,
+         f4_mean_strat = ((AU14*0.724) * (AU17*0.632) * (AU23*0.710))/3,
+         f4_mean = ((AU12*0.776) * (AU14*0.458))/2,
+         f6_mean = AU06*0.817) %>%
+  ungroup() %>%
+  select(contains("AU"), contains("mean"), control_other, ppt) %>%
+  filter(!is.na(control_other))
+
+```
+model fit
+
+```{r GLME experimentation}
+# show that random SD is much larger than the effect. 
+lmermod_1 <- d_full_factors %>%
+  select(contains("f1"), control_other, ppt) %>%
+  filter(!is.na(control_other)) %>%
+lmer(f1_mean_strat ~ control_other + (1|ppt) + (control_other|ppt), data = ., REML = FALSE, lmerControl(optimizer ='bobyqa'))
+  
+
+lmermod_1 %>% summary()
+
+
+# model confidence intervals
+# h vs l
+CI_low = -0.012650 - 1.96*0.008699
+CI_up = -0.012650 + 1.96*0.008699
+
+
+
+lmmod_1 <- d_full_factors %>%
+  select(contains("f1"), control_other) %>%
+  filter(!is.na(control_other)) %>%
+  lm(f1_mean_strat ~ control_other, data = .)
+
+lmmod_1 %>% summary()
+
+CI_low_lm = -0.028705 - 1.96*0.002005
+CI_up_lm = -0.028705 + 1.96*0.002005
+
+```

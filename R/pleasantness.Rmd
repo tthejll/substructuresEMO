@@ -1,0 +1,490 @@
+---
+title: "pleasantness"
+output: html_document
+author: tthejll
+---
+
+
+# Setup
+```{r setup}
+library(tidyverse)
+library(psych)
+library(ggcorrplot)
+
+```
+
+## Load data and clean data
+```{r load data}
+
+# we load in pre-processed data
+d_au_annotation <- read_csv("../data/d_au_annotation.csv") %>%
+  select(-...1) %>% # remove python index column
+  mutate(emo_cat2 = replace_na(emo_cat2, "NA")) %>%
+  mutate_if(is.character, as.factor) %>%# make all character columns to factors
+  rename_with(~ str_replace(., "_r$", ""), ends_with("_r"))
+  # select(-AU45)
+
+  # mutate(across(contains("AU"), ~(. - mean(.))/sd(.),.names = "std_{.col}")) # if we want to standardize
+
+```
+
+# Main expressions
+```{r main expression}
+# this is identified in factor_analysis main
+
+d_au <- d_au_annotation %>%
+  select(contains("AU"))
+
+sevenf <- fa(d_au, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+print(sevenf$loadings, cutoff = 0.3)
+
+```
+
+
+
+### AU factor use
+```{r setup factor data}
+# first we create stratou factors
+f1_strat <- c("AU06", "AU07", "AU12")
+f2_strat <- c("AU01", "AU02")
+f3_strat = c("AU20", "AU25", "AU26")
+f4_strat = c("AU14", "AU17", "AU23")
+f5_strat = c("AU04", "AU07", "AU09")
+f6_strat = c("AU10", "AU15", "AU17")
+
+d_full_factors <- d_au_annotation %>%
+  rowwise() %>%
+  mutate(f1_mean_strat = ((AU06*0.982) * (AU07*0.446) * (AU12*0.882))/3,
+         f4_mean_strat = ((AU14*0.724) * (AU17*0.632) * (AU23*0.710))/3,
+         f4_mean = ((AU12*0.776) * (AU14*0.458))/2,
+         f6_mean = AU06*0.817) %>%
+  ungroup() %>%
+  select(contains("AU"), contains("mean"), pleasantness, ppt) %>%
+  filter(!is.na(pleasantness))
+
+```
+
+### AU factor use
+```{r factor 1}
+
+# choose the right factor
+d_temp_au <- d_full_factors %>%
+  select(contains("f1"), pleasantness, ppt) %>%
+  filter(!is.na(pleasantness)) %>%
+  mutate(frame_n = 1:nrow(.),
+         indicator = if_else(ppt != lag(ppt, default = first(ppt)), 1, 0)) %>%
+  group_by(ppt) %>%
+  mutate(frames = 1:n()) %>% ungroup()
+
+# Calculate mean for each participant and condition
+condition_means <- d_temp_au %>%
+  group_by(pleasantness, ppt) %>%
+  summarise(mean_value = mean(f1_mean_strat), sd = sd(f1_mean_strat), n = n(), .groups = "drop")
+
+# calculate grand means
+grand_mean <- d_temp_au %>%
+  group_by(pleasantness) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), median = median(f1_mean_strat), n = n(), .groups = "drop")
+
+count_zeros <- d_temp_au %>%
+  filter(f1_mean_strat == 0) %>%
+  group_by(pleasantness) %>%
+  summarise(mean_value = mean(f1_mean_strat),sd = sd(f1_mean_strat), n = n(), .groups = "drop") %>%
+  mutate(percent = (n/grand_mean$n)*100)
+
+# order High, Low, Medium
+percent_zeros <- count_zeros$n/grand_mean$n*100
+
+
+# labelling help
+ppt_levels <- c("301_neg2", "305_neg2", "306_neg1", "308_neg1", "309_neg1", "309_neg2", "312_neg1", "313_neg2", "316_neg2", "318_neg2", "319_neg1", "323_neg2", "324_neg2", "326_neg2", "327_neg1", "328_neg2", "332_neg1", "333_neg2", "334_neg1", "335_neg2", "338_neg2", "339_neg1", "341_neg2", "391_neg1")
+
+ppt_labels <- c(1:4, "5 - neg1", "5 - neg2", 6:23)
+
+ppt_label_map <- setNames(ppt_labels, ppt_levels)
+
+
+# plot overall effect  - saving ratio 800x450
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.07) +
+  geom_hline(
+    data = grand_mean,
+    aes(yintercept = mean_value, color = pleasantness), lty = "dashed") +
+  scale_color_viridis_d(name="Pleasantness") + 
+  theme_minimal() + 
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") +
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs")
+
+
+# plot participant effect - saving ratio 800x550
+d_temp_au %>%
+  ggplot(
+    data = .,
+    aes(x = frames,
+             y = f1_mean_strat,
+             group = 1,
+             )) +
+  geom_line(size = 0.2, alpha = 0.5) +
+  facet_wrap(~ppt, labeller = labeller(ppt = ppt_label_map), nrow = 6, ncol = 4) +
+  geom_hline(
+    data = condition_means,
+    aes(yintercept = mean_value, color = pleasantness), lty = "dashed") +
+  scale_color_viridis_d(name="Pleasantness") + 
+  theme_minimal() +
+  ylim(c(0,1)) +
+  ylab("Enjoyment smile activation") + 
+  xlab("Frames") + 
+  labs(title = "Weighted average activation of the Enjoyment Smile AUs (per participant)")
+
+# calculate overall effects
+# l v H
+d_temp_au %>%
+  filter(pleasantness != "Medium") %>%
+  wilcox.test(f1_mean_strat ~ pleasantness, data = .)
+
+# L v M
+d_temp_au %>%
+  filter(pleasantness != "High") %>%
+  wilcox.test(f1_mean_strat ~ pleasantness, data = .)
+
+# High v Medium
+d_temp_au %>%
+  filter(pleasantness != "Low") %>%
+  wilcox.test(f1_mean_strat ~ pleasantness, data = .)
+
+
+```
+
+```{r f1 per participant analysis}
+condition_means %>% 
+  ggplot(data = .,
+         aes(x = mean_value,
+             color = pleasantness,
+             fill = pleasantness)) + 
+  geom_density(alpha = 0.1) + 
+  scale_fill_viridis_d(name="Pleasantness") +
+  scale_color_viridis_d(name="Pleasantness") + 
+  theme_minimal() + 
+  labs(title = "Density plot for participant mean activation of Enjoyment Smile",
+       x = "Mean activation",
+       y = "Desnsity")
+
+# print means for participants
+condition_means %>%
+  group_by(pleasantness) %>%
+  summarise(mean = mean(mean_value), SD = sd(mean_value), n = n())
+
+# low v high
+condition_means %>%
+  filter(pleasantness != "Medium") %>%
+  wilcox.test(mean_value ~ pleasantness, data = .)
+
+# low v medium
+condition_means %>%
+  filter(pleasantness != "High") %>%
+  wilcox.test(mean_value ~ pleasantness, data = .)
+
+# medium v high
+condition_means %>%
+  filter(pleasantness != "Low") %>%
+  wilcox.test(mean_value ~ pleasantness, data = .)
+
+```
+
+
+### Feature importance
+
+```{r feature importance from python}
+
+# copied from python - pleasantness
+feature_name <- c('f7_sd', 'f2_sum', 'f2_sd', 'f7_max', 'f2_mean', 'f7_mean', 'f7_sum', 'f3_mean', 'f2_max', 'f3_sum', 'f3_max', 'f3_sd', 'f5_max', 'f1_sd', 'f5_sd', 'f1_max', 'f5_mean', 'f5_sum', 'f6_mean', 'f1_sum', 'f1_mean', 'f4_max', 'f4_sum', 'f4_sd', 'f4_mean')
+feature_importance_val <- c(0.020896945669192486, 0.024554450475514997, 0.026085528257839066, 0.02679397645840975, 0.0273516334904008, 0.02762591738147959, 0.027744826164751924, 0.029166535261813568, 0.031473471383077246, 0.03357442557910091, 0.035159988405725824, 0.036998364656617724, 0.03812004489690437, 0.03845493078821294, 0.038881113457360915, 0.039000651523619624, 0.03916884143960132, 0.041260932935696826, 0.047327637175760315, 0.05125553658516071, 0.05240303245527041, 0.05445929573778729, 0.06715681136004632, 0.0701574267224058, 0.07492768173824924) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Pleasantness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r feature importance AU from python}
+
+# copied from python - pleasantness
+feature_name <- c('AU05', 'AU02', 'AU09', 'AU45', 'AU15', 'AU23', 'AU01', 'AU26', 'AU17', 'AU25', 'AU07', 'AU10', 'AU20', 'AU06', 'AU14', 'AU12', 'AU04')
+feature_importance_val <- c(0.023764321238205478, 0.028979341062335864, 0.035123915524427604, 0.03603570075174638, 0.03883804507174257, 0.0469671362477058, 0.05120984681145141, 0.05143559298014584, 0.05232393770415035, 0.05576499822896115, 0.0633239947732716, 0.06954593718887278, 0.07178732175280991, 0.08410985927567455, 0.08804458616854954, 0.09493218354525473, 0.10781328167469446) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name), 
+         appraisal = "Pleasantness")
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col() + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+```{r feature importance Stratou from python}
+
+# copied from python - pleasantness
+feature_name <- c('f2_max', 'f2_sd', 'f2_mean', 'f2_sum', 'f6_sd', 'f3_mean', 'f6_max', 'f3_sum', 'f6_mean', 'f3_sd', 'f3_max', 'f6_sum', 'f5_sd', 'f5_max', 'f1_sd', 'f5_mean', 'f4_sum', 'f5_sum', 'f4_max', 'f4_mean', 'f4_sd', 'f1_max', 'f1_sum', 'f1_mean')
+feature_importance_val <- c(0.023183956693362193, 0.02340569518585662, 0.026947954044902547, 0.02959475215106978, 0.03324411977007604, 0.03450933748008961, 0.03660727046201913, 0.03701228233249417, 0.037282002556151425, 0.03975488646301682, 0.04164528750455558, 0.04190861835083164, 0.042500758923103614, 0.04438612883462364, 0.04562228765726647, 0.04566402633063078, 0.04759440405177354, 0.04897878493572514, 0.049865063642439623, 0.05037991281249146, 0.052850820947176747, 0.05427915558833479, 0.0553910964636511, 0.057391396818357594) %>% round(digits = 4)
+feature_importance <- tibble(feature_name, feature_importance_val) %>%
+  mutate(feature_name = as.factor(feature_name),
+         appraisal = "Pleasantness") %>%
+  separate(feature_name, c("Factor", "val"), sep = "_", remove = FALSE)
+  
+
+feature_importance %>%
+ggplot(data = .,
+       aes(
+         x = fct_reorder(feature_name, feature_importance_val), 
+         y = feature_importance_val)) +
+  coord_flip() +
+  geom_col(aes(fill = Factor)) + 
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  ggtitle("Feature importance in RandomForest Classifier") +
+  ylab("Decrease in impurity") +
+  xlab("")
+
+```
+
+#### Factor analysis for pleasantness - this isn't used in the analyss.
+
+It was tested to see if there were differences in how expressions were used when looking at different levels of appraisal
+
+# Model pleasantness
+
+## pleasantness high
+```{r filter pleasantness}
+# d_au_pleasantness_high <- d_au_annotation %>%
+#   filter(pleasantness == "High") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_pleasantness_high %>%
+#   KMO(.) # fine 
+# 
+# d_au_pleasantness_high %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_pleasantness_high))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+# 
+# d_au_pleasantness_high %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_pleasantness_high %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_pleasantness_high %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_pleasantness_high, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_pleasantness_high, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_pleasantness_high, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_pleasantness_high, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_pleasantness_high, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_pleasantness_high, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_pleasantness_high, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_pleasantness_high, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_pleasantness_high)
+
+```
+
+## pleasantness medium #######################################################
+```{r filter pleasantness}
+# d_au_pleasantness_medium <- d_au_annotation %>%
+#   filter(pleasantness == "Medium") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# Kaiser-Meyer-Olkin factor adequacy
+# d_au_pleasantness_medium %>%
+#   KMO(.) # fine 
+# 
+# d_au_pleasantness_medium %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_pleasantness_medium))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+
+# d_au_pleasantness_medium %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_pleasantness_medium %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_pleasantness_medium %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_pleasantness_medium, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_pleasantness_medium, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_pleasantness_medium, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_pleasantness_medium, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_pleasantness_medium, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_pleasantness_medium, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_pleasantness_medium, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_pleasantness_medium, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_pleasantness_medium)
+
+```
+
+## pleasantness low #######################################################
+```{r filter pleasantness}
+# d_au_pleasantness_low <- d_au_annotation %>%
+#   filter(pleasantness == "Low") %>%
+#   select(contains("AU"))
+
+```
+
+### data suitability
+``` {r data checks}
+# # Kaiser-Meyer-Olkin factor adequacy
+# d_au_pleasantness_low %>%
+#   KMO(.) # fine 
+# 
+# d_au_pleasantness_low %>%
+#   cor(.) %>%
+# cortest.bartlett(., n = nrow(d_au_pleasantness_low))
+
+```
+
+### Number of factors to retain
+```{r Minimum Average Partial correlation} 
+# 
+# d_au_pleasantness_low %>%
+# VSS(., use ="complete.obs", fm = 'mle', rotate = "oblimin") %>% print()
+# 
+# d_au_pleasantness_low %>%
+#   fa.parallel(., main = "Parallel Analysis", n.iter = 100)
+# 
+# 
+# d_au_pleasantness_low %>%
+#   scree(factors = F,)
+```
+
+Based on MAP and parallel analysis, we want to test everything from 1 to 7 factors
+
+### Testing different factors
+
+```{r factor analysis}
+
+# onef <- fa(d_au_pleasantness_low, nfactors = 1, rotate = "oblimin", fm = "minres")
+# print(onef$loadings, cutoff = 0.3)
+# 
+# twof <- fa(d_au_pleasantness_low, nfactors = 2, rotate = "oblimin", fm = "minres")
+# print(twof$loadings, cutoff = 0.3)
+# 
+# threef <- fa(d_au_pleasantness_low, nfactors = 3, rotate = "oblimin", fm = "minres")
+# print(threef$loadings, cutoff = 0.3)
+# 
+# fourf <- fa(d_au_pleasantness_low, nfactors = 4, rotate = "oblimin", fm = "minres")
+# print(fourf$loadings, cutoff = 0.3)
+# 
+# fivef <- fa(d_au_pleasantness_low, nfactors = 5, rotate = "oblimin", fm = "minres")
+# print(fivef$loadings, cutoff = 0.3)
+# 
+# sixf <- fa(d_au_pleasantness_low, nfactors = 6, rotate = "oblimin", fm = "minres") # has ultra heywood case
+# print(sixf$loadings, cutoff = 0.3)
+# 
+# sevenf <- fa(d_au_pleasantness_low, nfactors = 7, rotate = "oblimin", fm = "minres") # chosent to be best fit
+# print(sevenf$loadings, cutoff = 0.3)
+# 
+# eigthf <- fa(d_au_pleasantness_low, nfactors = 8, rotate = "oblimin", fm = "minres", max.iter = 1000)
+# print(eigthf$loadings, cutoff = 0.3)
+# 
+# scree(d_au_pleasantness_low)
+
+```
