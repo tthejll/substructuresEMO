@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous"> -->
+    <link rel="stylesheet" href="annotation_css.css">
+
+    <title>Video Annotation system</title>
+  </head>
+  <body>
+
+
+<!-- Choose video file -->
+<div class="header">
+  <p>Current video: 
+<select name="VideoName" id="selectVid">
+    <option>Choose a video</option>
+</select>  
+<span style="float: right;">
+  Annotator name: <input type="text" id="annotatorName">  <button onclick="lockAnnotatorName()">Submit</button> <button onclick="unlockAnnotatorName()">Edit</button>
+</span>
+</p>
+
+
+
+
+<!-- Header over video - default 'no vid selected' -->
+<h1 id="vidNameHeader" style="text-align: center; font-size: large;">No Video selected</h1>
+</div>
+
+<!-- Video viewer -->
+<center>
+    <video id="vidAnnotation" width="50%" controls>
+        <source id="vidSource" src="" type="video/mp4"> <!-- no preloaded video - grabs src from JS code-->
+        <!-- <source src="movie.ogg" type="video/ogg"> -->
+      Your browser does not support the video tag.
+    </video> 
+</center>
+
+<!-- Annotation tool -->
+<!-- For each new dropdown - create empty select and populate using JS -->
+<div>
+  <p> Actor:
+  <select name="actor" id="VoH" style="display: inline;"></select>.
+  How action is conducted:
+  <select name="modal" id="modality" style="display: inline;"></select>.
+  Offer type:
+  <select name="demand" id="demand"></select>.
+  Approximate duration of action:
+  <select name="durationAction" id="duration"></select>. </p>
+  <p>
+  <strong>Effect of the offer</strong>
+  </p> 
+  <p> Participant items:
+  Number of Chairs/Records: <select name="pptChairRecords" id="pptChairRecord"></select>
+  Number of Plate/Lamps: <select name="pptPlateLamps" id="pptPlateLamps"></select>
+  Number of Clocks/Paintings: <select name="pptClockPainting" id="pptClockPainting"></select>
+</p>
+<p> Virtual agent items:
+  Number of Chairs/Records: <select name="vaChairRecords" id="vaChairRecord"></select>
+  Number of Plate/Lamps: <select name="vaPlateLamps" id="vaPlateLamps"></select>
+  Number of Clocks/Paintings: <select name="vaClockPainting" id="vaClockPainting"></select>
+</p>
+</div>
+
+
+<!-- Saves annotations with above select options to table-->
+<div>  <p><button onclick="addAnnotation()">Add annotation: Offer</button></p> </div>
+
+<!-- Generic annotations -->
+<div> <p style="font-weight: bold;">
+  Add generic annotation: </p>
+  <p>
+  <select name="generalActions" id="genAction"></select>
+</p></div>
+<!-- Saves generic annotation to table -->
+<div> <p> <button onclick="addGenAnnotation()">Add annotation: Generic</button>
+</p></div>
+
+<!-- Save json -->
+<div class="saveBtn"> <p style="font-weight: bold;"> Save annotations:    
+    <button onclick="outJson()" class="savebtn">Save and write</button>
+  </p>
+</div>
+
+
+<!-- table div - autowrites from JS script -->
+<div id = "autoTable"></div>
+
+
+
+
+    <!-- JavaScript -->
+    <script src="annotation_functions.js"></script>
+  
+  </body>
+</html>
+

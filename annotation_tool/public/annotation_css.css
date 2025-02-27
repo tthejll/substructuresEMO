@@ -1,0 +1,68 @@
+ 
+ /* table overflow*/
+  table{
+   border: 1px solid; 
+   overflow-y:scroll;
+   height:200px;
+   display:block;
+   text-align: center;
+   border-collapse: collapse;
+}
+th{
+  border: 1px solid;
+  padding: 3px 3px 3px 3px;
+  position: sticky; 
+  top: 0;
+  z-index: 1;
+  /* box-shadow: inset 1px 0px #000; */
+  background: #eee;
+}
+td{
+  border: 1px solid;
+  padding: 3px 3px 3px 3px;
+  /* box-shadow: inset 1px -1px #000; */
+}
+
+button {
+  background-color: #eee;
+  border-radius: 6px;
+  border: 1px solid #828486;
+  cursor: pointer;
+  display: inline-block;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 0.7;
+  list-style: none;
+  padding: 6px 16px;
+  position: relative;
+  transition: background-color 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  vertical-align: middle;
+  white-space: nowrap;
+  word-wrap: break-word;
+}
+
+button:hover {
+  background-color: #79857e;
+  text-decoration: none;
+  transition-duration: 0.1s;
+}
+
+button:disabled {
+  background-color: #FAFBFC;
+  border-color: rgba(27, 31, 35, 0.15);
+  color: #959DA5;
+  cursor: default;
+}
+
+button:active {
+  background-color: #EDEFF2;
+  box-shadow: rgba(225, 228, 232, 0.2) 0 1px 0 inset;
+  transition: none 0s;
+}
+
+button:focus {
+  outline: 1px transparent;
+}
